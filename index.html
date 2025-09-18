@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ระบบบันทึกเวลาเข้า-ออก</title>
+<style>
+body{font-family:"TH Sarabun New",sans-serif;background:#f0f4f8;margin:0;padding:20px;}
+h1{text-align:center;color:#1e3a8a;}
+.btn{padding:10px 20px;margin:5px;border:none;border-radius:8px;cursor:pointer;font-weight:bold;transition:.1s;box-shadow:0 4px 6px rgba(0,0,0,.1);}
+.btn:active{transform:scale(.95);box-shadow:0 2px 3px rgba(0,0,0,.2);}
+.btn-checkin{background:#22c55e;color:#fff;}
+.btn-checkout{background:#ef4444;color:#fff;}
+.btn:hover{opacity:.9;}
+#login{max-width:350px;margin:80px auto;padding:30px;background:linear-gradient(135deg,#38bdf8,#3b82f6);border-radius:12px;box-shadow:0 6px 12px rgba(0,0,0,.2);color:#fff;text-align:center;}
+#login input{width:100%;padding:10px;margin:10px 0;border-radius:6px;border:none;font-size:16px;}
+#loginMsg{color:#f87171;font-weight:bold;}
+table{width:100%;border-collapse:collapse;margin-top:20px;}
+th,td{border:1px solid #ccc;padding:8px;text-align:center;}
+th{background:#bfdbfe;}
+a{color:#2563eb;text-decoration:underline;}
+#usernameDisplay{float:right;font-weight:bold;margin-top:-40px;margin-right:10px;position:relative;}
+#logoutMenu{display:none;position:absolute;right:0;background:#fff;border:1px solid #ccc;border-radius:6px;padding:5px;}
+#checkoutModal,#successModal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,.5);justify-content:center;align-items:center;}
+#checkoutModalContent,#successModalContent{background:#fff;padding:20px;border-radius:10px;}
+#checkoutModalContent{width:320px;position:relative;}
+#checkoutModalContent textarea{width:100%;height:80px;margin-bottom:10px;}
+#checkoutModalContent input[type=file]{margin-bottom:10px;}
+#successModalContent{width:250px;text-align:center;}
+.pagination{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;}
+.pagination .btn{padding:6px 10px;}
+.page-indicator{font-weight:bold;color:#1f2937;}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>เข้าสู่ระบบ</h2>
+  <input type="password" id="code" placeholder="ใส่รหัสพนักงาน" />
+  <button class="btn btn-checkin" onclick="login()">เข้าสู่ระบบ</button>
+  <p id="loginMsg"></p>
+</div>
+
+<div id="app" style="display:none;">
+  <div id="usernameDisplay">
+    <span id="userNameText"></span>
+    <span id="gear" style="cursor:pointer;margin-left:5px;">⚙️</span>
+    <div id="logoutMenu">
+      <button onclick="confirmLogout()" class="btn btn-checkout">ออกจากระบบ</button>
+    </div>
+  </div>
+
+  <h1>ระบบบันทึกเวลาเข้า-ออก</h1>
+  <div>
+    <button class="btn btn-checkin" onclick="checkIn()">ลงเวลาเข้า</button>
+    <button class="btn btn-checkout" onclick="checkOut()">ลงเวลาออก</button>
+  </div>
+
+  <table id="logTable">
+    <thead>
+      <tr>
+        <th>วันที่</th>
+        <th>เวลาเข้า</th>
+        <th>เวลาออก</th>
+        <th>สถานะ</th>
+        <th>รายละเอียด</th>
+        <th>รูปภาพ</th>
+        <th>ผู้บันทึก</th> <!-- ✅ เพิ่มคอลัมน์ -->
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="pagination">
+    <button class="btn" id="btnPrev">ก่อนหน้า</button>
+    <span class="page-indicator" id="pageIndicator">หน้า 1/1</span>
+    <button class="btn" id="btnNext">ถัดไป</button>
+  </div>
+</div>
+
+<!-- Modal เวลาออก -->
+<div id="checkoutModal">
+  <div id="checkoutModalContent">
+    <span onclick="closeCheckoutModal()" style="position:absolute;top:10px;right:15px;cursor:pointer;font-size:20px;">&times;</span>
+    <h3>ลงเวลาออก</h3>
+    <textarea id="checkoutDetail" placeholder="กรอกรายละเอียดการทำงาน"></textarea>
+    <input type="file" id="checkoutImages" multiple accept="image/*">
+    <button class="btn btn-checkout" onclick="submitCheckout()">ยืนยัน</button>
+  </div>
+</div>
+
+<!-- Modal บันทึกสำเร็จ -->
+<div id="successModal">
+  <div id="successModalContent">
+    <h3>บันทึกเวลาสำเร็จ ✅</h3>
+    <p>กดตรงไหนก็ได้เพื่อปิด</p>
+  </div>
+</div>
+
+<script>
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzLnxQkyQdIQvxffiT2baH1DX_3M2UdpL-7mHKPPRJj8kEoDGHoqRRJPGcUMdtLS_Ty/exec";
+const users = {"1069":"ทรงกลด สุดตา","1062":"อนิน นาควัชระ","1083":"ศุภชัย เรืองเพชร","1027":"อำนาจ แม้นพรม","1073":"ชัยเทพ เจียมวีระบรรยง","1077":"บัญชา ฟักเฟื่อง","1039":"พรชัย โพธิ์ไซย์","1065":"ตะวัน ทรัพย์อบรมย์","1052":"โสภาณา จัทร์ทวีนุช","1079":"นพกร เมืองแก้ว","1023":"ไกรสอน คชมิตร","1021":"ชนสรณ์ เนียมสุภาพ","1031":"อนุชา สิทธิขำ","1063":"นฤเดช เวชบุญ","1027":"อำนาจ แม้นพรม","1075":"สุรชัย สุวรรณราฐ","1081":"ปิยะนันท์ ศรีชุมพวง","1057":"พชร สาธร","1056":"บุญฤิทธิ์ สายลือนาม","1060":"สุรศักดิ์ ต้วมสี","1088":"วิฑูรย์ สุวรรณกิจ"};
+let currentUser = null;
+
+const THAI_DAYS=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+const THAI_MONTHS=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+function thaiFullDate(d){ return `วัน${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} พ.ศ. ${d.getFullYear()+543}`; }
+function timeDots(d){ const hh=String(d.getHours()).padStart(2,'0'); const mm=String(d.getMinutes()).padStart(2,'0'); const ss=String(d.getSeconds()).padStart(2,'0'); return `${hh}.${mm}.${ss}`; }
+
+function normalizeDriveImageUrl(url){
+  if(!url) return '';
+  try{
+    if(url.includes('lh3.googleusercontent.com')) return url;
+    if(/drive\.google\.com\/uc\?/.test(url)) return url;
+    const m1=url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+    if(m1&&m1[1]) return `https://drive.google.com/uc?export=view&id=${m1[1]}`;
+    const m2=url.match(/[?&]id=([^&]+)/);
+    if(m2&&m2[1]) return `https://drive.google.com/uc?export=view&id=${m2[1]}`;
+    const m3=url.match(/[-\w]{25,}/);
+    if(m3&&m3[0]) return `https://drive.google.com/uc?export=view&id=${m3[0]}`;
+    return url;
+  }catch(e){ return url; }
+}
+
+// ===== Login =====
+(function(){
+  const savedUser = JSON.parse(localStorage.getItem('currentUser'));
+  if(savedUser && users[savedUser.code]){
+    currentUser = savedUser; showApp(); loadLogs();
+  }
+})();
+function login(){
+  const code=document.getElementById('code').value.trim();
+  if(users[code]){
+    currentUser={code,name:users[code]};
+    localStorage.setItem('currentUser',JSON.stringify(currentUser));
+    showApp(); loadLogs();
+  }else document.getElementById('loginMsg').innerText='รหัสไม่ถูกต้อง';
+}
+function showApp(){
+  document.getElementById('login').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('userNameText').innerText=currentUser.name;
+}
+const gear=document.getElementById('gear');
+const logoutMenu=document.getElementById('logoutMenu');
+gear.addEventListener('click',()=>{logoutMenu.style.display=logoutMenu.style.display==='none'?'block':'none';});
+function confirmLogout(){
+  if(confirm('คุณต้องการออกจากระบบใช่หรือไม่?')){
+    localStorage.removeItem('currentUser'); location.reload();
+  }
+}
+
+// ===== Pagination =====
+const PAGE_SIZE = 10;
+let allRows = [];
+let pageIndex = 0;
+document.getElementById('btnPrev').addEventListener('click', ()=>{ if(pageIndex>0){ pageIndex--; renderPage(); }});
+document.getElementById('btnNext').addEventListener('click', ()=>{ const totalPages=Math.max(1,Math.ceil(allRows.length/PAGE_SIZE)); if(pageIndex<totalPages-1){ pageIndex++; renderPage(); }});
+
+function renderPage(){
+  const tbody=document.querySelector('#logTable tbody');
+  tbody.innerHTML='';
+  const totalPages=Math.max(1, Math.ceil(allRows.length/PAGE_SIZE));
+  const start=pageIndex*PAGE_SIZE, end=Math.min(allRows.length,start+PAGE_SIZE);
+  const pageRows=allRows.slice(start,end);
+
+  pageRows.forEach(row=>{
+    const urls=String(row[5]||'').split(',').map(s=>s.trim()).filter(Boolean);
+    let linksHtml='';
+    if(urls.length){
+      linksHtml=urls.map(u=>{
+        const nu=normalizeDriveImageUrl(u);
+        return `<a href="${nu}" target="_blank" rel="noopener">ลิงค์</a>`;
+      }).join(', ');
+    }
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${row[0]||''}</td>
+      <td>${row[1]||''}</td>
+      <td>${row[2]||''}</td>
+      <td>${row[3]||''}</td>
+      <td>${row[4]||''}</td>
+      <td>${linksHtml}</td>
+      <td>${row[6]||''}</td> <!-- ✅ ผู้บันทึก -->
+    `;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('pageIndicator').innerText=`หน้า ${Math.min(pageIndex+1,totalPages)}/${totalPages}`;
+}
+
+// ===== Immediate Add =====
+function addLogRowImmediately(status){
+  const now=new Date();
+  const row=[
+    thaiFullDate(now),
+    status==='เข้า'?timeDots(now):'',
+    status==='ออก'?timeDots(now):'',
+    status,
+    '',
+    '',
+    currentUser.name // ✅ เก็บชื่อผู้บันทึก
+  ];
+  allRows.unshift(row);
+  pageIndex=0; renderPage();
+}
+
+// ===== Actions =====
+function checkIn(){
+  if(!currentUser) return;
+  addLogRowImmediately('เข้า');
+  fetch(GOOGLE_SCRIPT_URL,{
+    method:'POST',
+    body:JSON.stringify({
+      action:'checkin',
+      name: currentUser.name
+    })
+  }).then(r=>r.json()).then(r=>{
+    if(r&&r.success) loadLogs();
+    else alert(r.message||'บันทึกเข้าไม่สำเร็จ');
+  }).catch(()=>alert('เครือข่ายผิดพลาด'));
+}
+
+function checkOut(){
+  if(!currentUser) return;
+  document.getElementById('checkoutDetail').value='';
+  document.getElementById('checkoutImages').value='';
+  document.getElementById('checkoutModal').style.display='flex';
+}
+function closeCheckoutModal(){ document.getElementById('checkoutModal').style.display='none'; }
+
+function submitCheckout(){
+  const detail=document.getElementById('checkoutDetail').value.trim();
+  const files=Array.from(document.getElementById('checkoutImages').files);
+  const readerPromises=files.map(file=>new Promise(resolve=>{
+    const reader=new FileReader();
+    reader.onload=e=>resolve(e.target.result);
+    reader.readAsDataURL(file);
+  }));
+
+  Promise.all(readerPromises).then(images=>{
+    closeCheckoutModal();
+
+    for (let i=0;i<allRows.length;i++){
+      const row=allRows[i];
+      if(row[3]==='เข้า' && !row[2]){
+        row[2]=timeDots(new Date());
+        row[3]='เข้า-ออก';
+        row[4]=detail;
+        break;
+      }
+    }
+    renderPage();
+
+    fetch(GOOGLE_SCRIPT_URL,{
+      method:'POST',
+      body:JSON.stringify({
+        action:'checkout',
+        name: currentUser.name,
+        detail,
+        images
+      })
+    }).then(res=>res.json()).then(res=>{
+      if(res.success){ showSuccessModal(); loadLogs(); }
+      else alert(res.message||'บันทึกออกไม่สำเร็จ');
+    }).catch(()=>alert('เครือข่ายผิดพลาด'));
+  });
+}
+
+function showSuccessModal(){
+  const modal=document.getElementById('successModal');
+  modal.style.display='flex';
+  modal.addEventListener('click',()=>{ modal.style.display='none'; },{once:true});
+}
+
+// ===== Load Sheet =====
+function loadLogs(){
+  fetch(GOOGLE_SCRIPT_URL)
+    .then(res=>res.json())
+    .then(rows=>{
+      allRows = rows.slice().reverse();
+      pageIndex=0; renderPage();
+    })
+    .catch(()=>{});
+}
+</script>
+</body>
+</html>
